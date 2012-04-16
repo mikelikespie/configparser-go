@@ -1,7 +1,11 @@
-== Config Parser
+ConfigParser for Go
+===================
 
+Implementation of a parser of Python's[ConfigParser] format for Go
 
-Example:
+[ConfigParser]: http://docs.python.org/library/configparser.html
+
+Example usage:
 
     package main
     
