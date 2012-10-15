@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 )
 
 type Section map[string]string
 type ConfigFile map[string]Section
+
+var indentExp = regexp.MustCompile(`^\s+`)
 
 func isComment(l string) bool {
 	return len(l) > 0 && l[0] == '#'
@@ -20,8 +23,15 @@ func isSectionHeader(l string) bool {
 	return len(l) > 2 && l[0] == '[' && l[len(l)-1] == ']'
 }
 
-func isContinuation(line string) bool {
-	return line[0] == ' ' || line[0] == '\t'
+func getIndent(line string) string {
+	return indentExp.FindString(line)
+}
+
+func isContinuation(lastIndent string, line string) bool {
+	if strings.HasPrefix(line, lastIndent) {
+		return line[len(lastIndent)] == ' ' || line[len(lastIndent)] == '\t'
+	}
+	return false
 }
 
 func ParseString(s string) (config ConfigFile, err error) {
@@ -49,6 +59,9 @@ func Parse(r io.Reader) (config ConfigFile, err error) {
 	var curKey string
 
 	var line string
+	var lastIndent string
+
+	seenVal := false
 
 	lineNum := 0
 	for line, err = rd.ReadString('\n'); err == nil; line, err = rd.ReadString('\n') {
@@ -63,7 +76,9 @@ func Parse(r io.Reader) (config ConfigFile, err error) {
 			sectionName := strings.TrimSpace(tl[1 : len(tl)-1])
 			config[sectionName] = curSection
 			curKey = ""
-		case isContinuation(line):
+			lastIndent = ""
+			seenVal = false
+		case seenVal && isContinuation(lastIndent, line):
 			if curKey == "" {
 				return nil, fmt.Errorf("Invalid line: %d", lineNum)
 			}
@@ -72,11 +87,15 @@ func Parse(r io.Reader) (config ConfigFile, err error) {
 			if curSection == nil {
 				return nil, fmt.Errorf("Missing section header on line: %d", lineNum)
 			}
+
+			seenVal = true
+			lastIndent = getIndent(line)
+
 			// Find closer ':' or ':'
 			idx := strings.IndexAny(tl, ":=")
 
 			if idx < 0 {
-				return nil, fmt.Errorf("Invalid line: %d", lineNum)
+				return nil, fmt.Errorf("Invalid line: %d line:(%s)", lineNum, line)
 			}
 
 			key, value := strings.TrimSpace(tl[0:idx]), strings.TrimSpace(tl[idx+1:])
